@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSONL Viewer</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --bg-color: #f8fafc;
+            --border-color: #e2e8f0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: var(--bg-color);
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            margin-bottom: 20px;
+        }
+
+        .panels {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .line-list {
+            height: 600px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 10px;
+        }
+
+        .line-item {
+            padding: 8px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .line-item:hover {
+            background: var(--bg-color);
+        }
+
+        .line-item.selected {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .editor {
+            height: 600px;
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 20px;
+            overflow: auto;
+        }
+
+        #jsonEditor {
+            width: 100%;
+            height: 100%;
+            font-family: monospace;
+            white-space: pre;
+            margin: 0;
+            outline: none;
+        }
+
+        #jsonEditor.wrap {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .button {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .button:hover {
+            opacity: 0.9;
+        }
+
+        .button:disabled {
+            background: var(--border-color);
+            cursor: not-allowed;
+        }
+
+        .button-danger {
+            background: #dc2626;
+        }
+
+        .button-danger:hover {
+            background: #b91c1c;
+        }
+
+        .button-danger:disabled {
+            background: #fecaca;
+        }
+
+        /* JSON syntax highlighting */
+        .json-string { color: #22863a; }
+        .json-number { color: #005cc5; }
+        .json-boolean { color: #005cc5; }
+        .json-null { color: #005cc5; }
+        .json-key { color: #d73a49; }
+        .json-punctuation { color: #24292e; }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .actions-right {
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>JSONL Editor</h1>
+        </div>
+
+        <div class="file-input">
+            <input type="file" id="fileInput" accept=".jsonl">
+        </div>
+
+        <div class="panels">
+            <div class="line-list" id="lineList"></div>
+            <div class="editor">
+                <pre id="jsonEditor" contenteditable="true" spellcheck="false"></pre>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button id="saveLineBtn" class="button" disabled>Save Line</button>
+            <button id="deleteLineBtn" class="button button-danger" disabled>Delete Line</button>
+            <button id="downloadBtn" class="button" disabled>Download File</button>
+            <div class="actions-right">
+                <button id="wrapBtn" class="button">Toggle Wrap</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class JSONLViewer {
+            constructor() {
+                this.fileInput = document.getElementById('fileInput');
+                this.lineList = document.getElementById('lineList');
+                this.jsonEditor = document.getElementById('jsonEditor');
+                this.saveLineBtn = document.getElementById('saveLineBtn');
+                this.deleteLineBtn = document.getElementById('deleteLineBtn');
+                this.downloadBtn = document.getElementById('downloadBtn');
+                this.wrapBtn = document.getElementById('wrapBtn');
+                
+                this.lines = [];
+                this.selectedLineIndex = -1;
+
+                this.initializeEventListeners();
+            }
+
+            initializeEventListeners() {
+                this.fileInput.addEventListener('change', this.handleFileUpload.bind(this));
+                this.saveLineBtn.addEventListener('click', this.saveLine.bind(this));
+                this.deleteLineBtn.addEventListener('click', this.deleteLine.bind(this));
+                this.downloadBtn.addEventListener('click', this.downloadFile.bind(this));
+                this.wrapBtn.addEventListener('click', this.toggleWrap.bind(this));
+                this.jsonEditor.addEventListener('input', () => {
+                    this.saveLineBtn.disabled = false;
+                });
+            }
+
+            async handleFileUpload(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const text = await file.text();
+                this.lines = text.split('\n').filter(line => line.trim());
+                this.renderLineList();
+                this.downloadBtn.disabled = false;
+            }
+
+            renderLineList() {
+                this.lineList.innerHTML = '';
+                this.lines.forEach((line, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'line-item';
+                    div.textContent = `Line ${index + 1}: ${line.slice(0, 50)}${line.length > 50 ? '...' : ''}`;
+                    div.addEventListener('click', () => this.selectLine(index));
+                    this.lineList.appendChild(div);
+                });
+            }
+
+            selectLine(index) {
+                // Remove previous selection
+                const prevSelected = this.lineList.querySelector('.selected');
+                if (prevSelected) prevSelected.classList.remove('selected');
+
+                // Add new selection
+                this.lineList.children[index].classList.add('selected');
+                this.selectedLineIndex = index;
+
+                // Show prettified JSON with syntax highlighting
+                try {
+                    const jsonObj = JSON.parse(this.lines[index]);
+                    const prettified = JSON.stringify(jsonObj, null, 2);
+                    this.jsonEditor.innerHTML = this.highlightJSON(prettified);
+                    this.saveLineBtn.disabled = true;
+                    this.deleteLineBtn.disabled = false;
+                } catch (e) {
+                    this.jsonEditor.textContent = 'Invalid JSON';
+                    this.deleteLineBtn.disabled = true;
+                }
+            }
+
+            highlightJSON(json) {
+                return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
+                    let cls = 'json-number';
+                    if (/^"/.test(match)) {
+                        if (/:$/.test(match)) {
+                            cls = 'json-key';
+                            match = match.replace(/:$/, '');
+                            return `<span class="${cls}">${match}</span><span class="json-punctuation">:</span>`;
+                        } else {
+                            cls = 'json-string';
+                        }
+                    } else if (/true|false/.test(match)) {
+                        cls = 'json-boolean';
+                    } else if (/null/.test(match)) {
+                        cls = 'json-null';
+                    }
+                    return `<span class="${cls}">${match}</span>`;
+                }).replace(/[[\]{}]/g, match => `<span class="json-punctuation">${match}</span>`);
+            }
+
+            saveLine() {
+                if (this.selectedLineIndex === -1) return;
+
+                try {
+                    // Get text content without HTML tags
+                    const jsonText = this.jsonEditor.textContent;
+                    // Validate JSON
+                    const jsonObj = JSON.parse(jsonText);
+                    this.lines[this.selectedLineIndex] = JSON.stringify(jsonObj);
+                    this.renderLineList();
+                    this.saveLineBtn.disabled = true;
+                } catch (e) {
+                    alert('Invalid JSON');
+                }
+            }
+
+            downloadFile() {
+                const content = this.lines.join('\n');
+                const blob = new Blob([content], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'output.jsonl';
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            toggleWrap() {
+                this.jsonEditor.classList.toggle('wrap');
+                this.wrapBtn.textContent = this.jsonEditor.classList.contains('wrap') ? 'Disable Wrap' : 'Enable Wrap';
+            }
+
+            deleteLine() {
+                if (this.selectedLineIndex === -1) return;
+
+                if (confirm('Are you sure you want to delete this line?')) {
+                    this.lines.splice(this.selectedLineIndex, 1);
+                    this.renderLineList();
+                    this.jsonEditor.textContent = '';
+                    this.selectedLineIndex = -1;
+                    this.saveLineBtn.disabled = true;
+                    this.deleteLineBtn.disabled = true;
+                }
+            }
+        }
+
+        // Initialize the app
+        const viewer = new JSONLViewer();
+    </script>
+</body>
+</html>
